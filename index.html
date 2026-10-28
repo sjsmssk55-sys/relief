@@ -1,0 +1,1004 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>나만의 수호신 부조 만들기</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<style>
+  :root {
+    --stone: #E9EDEA;
+    --panel: #FBFCFB;
+    --line: #D6DDD8;
+    --ink: #1E2925;
+    --mute: #5E6A65;
+    --green: #3E6B58;
+    --green-soft: #DCE8E1;
+    --clay: #8A7F74;
+    --clay-soft: #C9C1B7;
+    --red: #B8432F;
+    --sun: #F2B640;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: "Pretendard", "SamsungOne Korean", "Noto Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif;
+    background: var(--stone); color: var(--ink);
+    overflow: hidden; user-select: none; -webkit-user-select: none;
+  }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  .hidden { display: none !important; }
+
+  /* ---------- login ---------- */
+  #login {
+    position: fixed; inset: 0; display: grid; place-items: center; padding: 24px;
+    background:
+      radial-gradient(circle at 18% 22%, rgba(62,107,88,.10), transparent 40%),
+      radial-gradient(circle at 85% 80%, rgba(138,127,116,.14), transparent 45%),
+      var(--stone);
+    z-index: 30;
+  }
+  .login-card {
+    width: min(460px, 100%); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 28px; padding: 36px 34px 30px;
+  }
+  .emblem {
+    width: 84px; height: 84px; border-radius: 22px; margin-bottom: 22px;
+    background: #9B9286;
+    box-shadow: inset 6px 6px 10px rgba(255,255,255,.28), inset -8px -8px 14px rgba(0,0,0,.28);
+    position: relative;
+  }
+  .emblem::before, .emblem::after {
+    content: ""; position: absolute; top: 28px; width: 16px; height: 13px; border-radius: 50%;
+    background: #9B9286; box-shadow: 3px 3px 4px rgba(0,0,0,.45), -2px -2px 3px rgba(255,255,255,.25);
+  }
+  .emblem::before { left: 20px; } .emblem::after { right: 20px; }
+  .emblem i {
+    position: absolute; left: 24px; right: 24px; bottom: 16px; height: 14px; border-radius: 6px;
+    background: #7E766B; box-shadow: inset 3px 3px 5px rgba(0,0,0,.5);
+  }
+  h1 { font-size: 30px; line-height: 1.25; margin: 0 0 8px; font-weight: 800; letter-spacing: -0.02em; }
+  .lead { margin: 0 0 28px; color: var(--mute); font-size: 16px; line-height: 1.55; }
+  .field { display: block; margin-bottom: 16px; }
+  .field span { display: block; font-size: 15px; font-weight: 700; margin-bottom: 8px; }
+  .field input {
+    width: 100%; height: 56px; border-radius: 14px; border: 1.5px solid var(--line);
+    background: #fff; padding: 0 16px; font: inherit; font-size: 18px; color: var(--ink);
+  }
+  .field input:focus { outline: none; border-color: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+  .primary {
+    width: 100%; height: 60px; border: 0; border-radius: 16px; margin-top: 8px;
+    background: var(--green); color: #fff; font-size: 18px; font-weight: 800;
+  }
+  .primary:active { transform: translateY(1px); filter: brightness(.95); }
+  .login-error { color: var(--red); font-size: 14px; min-height: 20px; margin: 4px 0 0; }
+
+  /* ---------- workspace ---------- */
+  #app { position: fixed; inset: 0; display: flex; }
+  #stage { position: relative; flex: 1; min-width: 0; }
+  #stage canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .topbar {
+    position: absolute; top: 14px; left: 14px; right: 14px; display: flex; gap: 10px;
+    align-items: center; pointer-events: none;
+  }
+  .topbar > * { pointer-events: auto; }
+  .seg {
+    display: inline-flex; background: rgba(251,252,251,.94); border: 1px solid var(--line);
+    border-radius: 16px; padding: 5px; gap: 4px;
+  }
+  .seg button {
+    border: 0; background: transparent; height: 46px; padding: 0 14px; border-radius: 12px;
+    font-size: 16px; font-weight: 700; color: var(--mute); display: inline-flex; align-items: center; gap: 8px;
+  }
+  .seg button.on { background: var(--ink); color: #fff; }
+  .seg button:disabled { opacity: .35; }
+  .pill {
+    height: 56px; border-radius: 16px; border: 1px solid var(--line); background: rgba(251,252,251,.94);
+    padding: 0 16px; font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .spacer { flex: 1; }
+  .who { font-size: 15px; font-weight: 700; padding: 0 6px 0 14px; }
+  .who small { color: var(--mute); font-weight: 600; margin-left: 4px; }
+
+  .hint {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    background: rgba(30,41,37,.86); color: #fff; padding: 12px 20px; border-radius: 999px;
+    font-size: 15px; font-weight: 600; white-space: nowrap; pointer-events: none;
+    max-width: calc(100% - 28px); overflow: hidden; text-overflow: ellipsis;
+  }
+  .drag-chip {
+    position: absolute; pointer-events: none; transform: translate(-50%, -140%);
+    background: var(--ink); color: #fff; font-weight: 800; font-size: 16px;
+    padding: 8px 14px; border-radius: 12px; white-space: nowrap;
+  }
+  .drag-chip.up { background: var(--green); }
+  .drag-chip.down { background: var(--clay); }
+
+  /* ---------- side panel ---------- */
+  #panel {
+    width: 372px; flex: none; background: var(--panel); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .panel-scroll { flex: 1; overflow-y: auto; padding: 18px 20px 8px; -webkit-overflow-scrolling: touch; }
+  .step { padding: 16px 0 20px; border-bottom: 1px solid var(--line); }
+  .step:last-child { border-bottom: 0; }
+  .step h2 {
+    font-size: 18px; font-weight: 800; margin: 0 0 12px; display: flex; align-items: center; gap: 10px;
+  }
+  .step h2 b {
+    width: 28px; height: 28px; border-radius: 50%; background: var(--green); color: #fff;
+    display: inline-grid; place-items: center; font-size: 15px; flex: none;
+  }
+  .note { font-size: 14px; color: var(--mute); line-height: 1.5; margin: 10px 0 0; }
+
+  .upload { display: flex; gap: 12px; align-items: stretch; }
+  .thumb {
+    width: 86px; height: 86px; flex: none; border-radius: 14px; border: 1px solid var(--line);
+    background: #fff center/cover no-repeat; position: relative; overflow: hidden;
+  }
+  .thumb em {
+    position: absolute; left: 0; right: 0; bottom: 0; background: rgba(30,41,37,.75); color: #fff;
+    font-size: 12px; font-style: normal; font-weight: 700; text-align: center; padding: 3px 0;
+  }
+  .upload-btn {
+    flex: 1; border: 2px dashed var(--clay-soft); border-radius: 14px; background: #fff;
+    display: flex; flex-direction: column; justify-content: center; align-items: flex-start;
+    padding: 0 16px; gap: 4px; font-weight: 800; font-size: 17px;
+  }
+  .upload-btn span { font-weight: 500; font-size: 13px; color: var(--mute); }
+  .upload-btn:active { background: var(--green-soft); }
+
+  .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .mode {
+    border: 1.5px solid var(--line); background: #fff; border-radius: 16px; padding: 10px 6px 12px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; min-height: 120px;
+  }
+  .mode svg { width: 64px; height: 40px; }
+  .mode strong { font-size: 18px; }
+  .mode span { font-size: 12px; color: var(--mute); line-height: 1.35; text-align: center; }
+  .mode.on { border-color: var(--green); background: var(--green-soft); box-shadow: inset 0 0 0 1.5px var(--green); }
+
+  .amount { position: relative; height: 92px; border-radius: 16px; background: #fff; border: 1px solid var(--line); touch-action: none; }
+  .amount svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .amount-labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: 14px; font-weight: 700; }
+  .amount-labels span:last-child { text-align: right; }
+  .amount-labels small { display: block; font-weight: 500; color: var(--mute); font-size: 12px; }
+  .now { font-size: 15px; font-weight: 700; color: var(--green); margin: 10px 0 0; }
+
+  .row { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+  .chip {
+    height: 46px; padding: 0 14px; border-radius: 12px; border: 1.5px solid var(--line); background: #fff;
+    font-size: 15px; font-weight: 700;
+  }
+  .chip.on { border-color: var(--ink); background: var(--ink); color: #fff; }
+  .chip:disabled { opacity: .4; }
+  .sub-title { font-size: 15px; font-weight: 800; margin: 18px 0 4px; }
+
+  .lightpad-wrap { display: flex; flex-direction: column; align-items: center; }
+  .lightpad {
+    width: 220px; height: 220px; border-radius: 50%; position: relative; touch-action: none;
+    background: radial-gradient(circle, #fff 0%, #F3F1EA 55%, #E4E1D7 100%);
+    border: 1px solid var(--line);
+  }
+  .tile {
+    position: absolute; left: 50%; top: 50%; width: 92px; height: 92px; margin: -46px 0 0 -46px;
+    border-radius: 10px; background: #9B9286; box-shadow: 0 2px 0 #7E766B;
+  }
+  .tile .bump {
+    position: absolute; left: 22px; top: 22px; width: 48px; height: 48px; border-radius: 50%; background: #9B9286;
+  }
+  .sun {
+    position: absolute; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%;
+    display: grid; place-items: center; touch-action: none;
+  }
+  .sun svg { width: 56px; height: 56px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.25)); }
+  .light-chips { justify-content: center; }
+
+  .shoot-wrap { padding: 14px 20px 18px; border-top: 1px solid var(--line); background: var(--panel); }
+  .shoot {
+    width: 100%; height: 64px; border: 0; border-radius: 18px; background: var(--red); color: #fff;
+    font-size: 19px; font-weight: 800; display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .shoot:active { filter: brightness(.94); transform: translateY(1px); }
+
+  /* ---------- overlays ---------- */
+  #busy {
+    position: fixed; inset: 0; background: rgba(233,237,234,.82); display: grid; place-items: center; z-index: 40;
+  }
+  .busy-box { text-align: center; font-weight: 800; font-size: 18px; }
+  .spinner {
+    width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 14px;
+    border: 5px solid var(--green-soft); border-top-color: var(--green); animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #toast {
+    position: fixed; left: 50%; top: 22px; transform: translateX(-50%); z-index: 50;
+    background: var(--ink); color: #fff; padding: 14px 22px; border-radius: 14px; font-weight: 700; font-size: 15px;
+    max-width: min(560px, calc(100% - 40px)); text-align: center; line-height: 1.45;
+  }
+  #shot {
+    position: fixed; inset: 0; z-index: 45; background: rgba(30,41,37,.6); display: grid; place-items: center; padding: 24px;
+  }
+  .shot-card { background: var(--panel); border-radius: 24px; padding: 20px; width: min(760px, 100%); }
+  .shot-card h3 { margin: 4px 4px 14px; font-size: 20px; }
+  .shot-card img { width: 100%; border-radius: 14px; display: block; background: #ddd; max-height: 56vh; object-fit: contain; }
+  .shot-name { font-size: 14px; color: var(--mute); margin: 10px 4px 0; word-break: break-all; }
+  .shot-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .shot-actions button { flex: 1; height: 58px; border-radius: 14px; font-size: 17px; font-weight: 800; border: 1.5px solid var(--line); background: #fff; }
+  .shot-actions .save { background: var(--green); border-color: var(--green); color: #fff; }
+
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
+
+  /* portrait tablet: panel goes below */
+  @media (orientation: portrait) {
+    #app { flex-direction: column; }
+    #stage { flex: 1 1 52%; }
+    #panel { width: 100%; flex: 1 1 48%; border-left: 0; border-top: 1px solid var(--line); }
+    .panel-scroll { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+    .step { border-bottom: 0; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== 로그인 ===== -->
+<div id="login">
+  <form class="login-card" id="loginForm" autocomplete="off">
+    <div class="emblem"><i></i></div>
+    <h1>나만의 수호신<br>부조 만들기</h1>
+    <p class="lead">귀면와 스케치 사진을 올리면 입체 작품으로 바꿔 줘요. 빛을 옮겨 가며 그림자를 살펴보세요.</p>
+    <label class="field"><span>학번</span><input id="sid" inputmode="numeric" pattern="[0-9]*" placeholder="예: 20901" maxlength="6"></label>
+    <label class="field"><span>이름</span><input id="sname" placeholder="이름" maxlength="10"></label>
+    <p class="login-error" id="loginError"></p>
+    <button class="primary" type="submit">시작하기</button>
+  </form>
+</div>
+
+<!-- ===== 작업 화면 ===== -->
+<div id="app" class="hidden">
+  <div id="stage">
+    <div class="topbar">
+      <div class="seg" id="toolSeg">
+        <button data-tool="rotate" class="on">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-3-6.2"/><path d="M20 4v5h-5"/></svg>
+          돌려 보기</button>
+        <button data-tool="raise">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 19V5"/><path d="M6 11l6-6 6 6"/></svg>
+          높이기</button>
+        <button data-tool="lower">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14"/><path d="M6 13l6 6 6-6"/></svg>
+          낮추기</button>
+      </div>
+      <button class="pill" id="frontBtn">정면으로</button>
+      <div class="spacer"></div>
+      <div class="pill"><span class="who" id="who"></span><button class="chip" id="logoutBtn" style="height:40px">나가기</button></div>
+    </div>
+    <div class="hint" id="hint"></div>
+      </div>
+
+  <aside id="panel">
+    <div class="panel-scroll">
+      <section class="step">
+        <h2><b>1</b>스케치 사진 올리기</h2>
+        <div class="upload">
+          <div class="thumb" id="thumb"><em id="thumbTag">예시 그림</em></div>
+          <button class="upload-btn" id="uploadBtn">사진 찍기 / 고르기<span>종이가 화면에 꽉 차게 찍어요</span></button>
+          <input type="file" id="file" accept="image/*" class="hidden">
+        </div>
+        <p class="note">흰 종이에 진한 선으로, 얼굴 테두리 선이 끊기지 않게 그리면 더 잘 만들어져요.</p>
+      </section>
+
+      <section class="step">
+        <h2><b>2</b>전체 높이 정하기</h2>
+        <div class="amount" id="amount"><svg id="amountSvg" viewBox="0 0 300 92" preserveAspectRatio="none"></svg></div>
+        <div class="amount-labels"><span>낮게<small>저부조</small></span><span>높게<small>고부조</small></span></div>
+        <p class="now" id="amountNow"></p>
+      </section>
+
+      <section class="step">
+        <h2><b>3</b>부분 높이 바꾸기</h2>
+        <p class="note" style="margin-top:0">위쪽의 ‘높이기’나 ‘낮추기’를 누르고 작품 위를 손가락으로 문질러요. 문지른 곳이 조금씩 높아지거나 낮아져요.</p>
+        <div class="row">
+          <button class="chip on" data-brush="0.06">붓 좁게</button>
+          <button class="chip" data-brush="0.12">붓 넓게</button>
+          <div class="spacer"></div>
+          <button class="chip" id="undoBtn">되돌리기</button>
+          <button class="chip" id="resetBtn">처음으로</button>
+        </div>
+      </section>
+
+      <section class="step">
+        <h2><b>4</b>빛 비추기</h2>
+        <div class="lightpad-wrap">
+          <div class="lightpad" id="pad">
+            <div class="tile"><div class="bump" id="bump"></div></div>
+            <div class="sun" id="sun">
+              <svg viewBox="0 0 56 56"><g stroke="#E0A020" stroke-width="3" stroke-linecap="round"><line x1="28" y1="3" x2="28" y2="10"/><line x1="28" y1="46" x2="28" y2="53"/><line x1="3" y1="28" x2="10" y2="28"/><line x1="46" y1="28" x2="53" y2="28"/><line x1="10" y1="10" x2="15" y2="15"/><line x1="41" y1="41" x2="46" y2="46"/><line x1="10" y1="46" x2="15" y2="41"/><line x1="41" y1="15" x2="46" y2="10"/></g><circle cx="28" cy="28" r="12" fill="#F2B640" stroke="#fff" stroke-width="3"/></svg>
+            </div>
+          </div>
+          <div class="row light-chips">
+            <button class="chip" data-light="0,0">정면</button>
+            <button class="chip" data-light="0,-0.85">위에서</button>
+            <button class="chip" data-light="-0.88,0">옆에서</button>
+            <button class="chip" data-light="0,0.85">아래에서</button>
+          </div>
+          <p class="note" style="text-align:center">해를 끌어서 빛이 오는 쪽을 정해요. 가장자리로 갈수록 옆에서 비춰서 그림자가 길어져요.</p>
+        </div>
+      </section>
+    </div>
+    <div class="shoot-wrap">
+      <button class="shoot" id="shootBtn">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+        이 모습 찍기</button>
+    </div>
+  </aside>
+</div>
+
+<div id="busy" class="hidden"><div class="busy-box"><div class="spinner"></div><span id="busyText">입체로 바꾸는 중…</span></div></div>
+<div id="toast" class="hidden"></div>
+<div id="shot" class="hidden">
+  <div class="shot-card">
+    <h3>찍은 사진</h3>
+    <img id="shotImg" alt="찍은 작품 사진">
+    <p class="shot-name" id="shotName"></p>
+    <div class="shot-actions">
+      <button class="save" id="saveBtn">태블릿에 저장</button>
+      <button id="shareBtn">공유하기</button>
+      <button id="closeShot">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = (id) => document.getElementById(id);
+
+  // ================= 상태 =================
+  const S = {
+    id: '', name: '',
+    tool: 'rotate', brush: 0.06, amount: 0.6,
+    light: { x: -0.62, y: -0.45 },
+    gw: 0, gh: 0, n: 0, Wd: 14, Hd: 14,
+    inside: null, main: null, H0: null, groove: null, P: null,
+    undo: [], isSample: true, fallback: false,
+  };
+  const PLATE = 0.6, FLOOR_Y = -7.5;
+
+  // ================= 로그인 =================
+  $('loginForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const id = $('sid').value.trim(), name = $('sname').value.trim();
+    if (!/^\d{4,6}$/.test(id)) { $('loginError').textContent = '학번을 숫자로 입력해요. (예: 20901)'; return; }
+    if (!name) { $('loginError').textContent = '이름을 입력해요.'; return; }
+    S.id = id; S.name = name;
+    $('who').innerHTML = `${id} <small>${name.replace(/[<>&]/g, '')}</small>`;
+    $('login').classList.add('hidden');
+    $('app').classList.remove('hidden');
+    onResize();
+    frontView();
+  });
+  $('logoutBtn').addEventListener('click', () => {
+    if (!confirm('나가면 지금 작업이 사라져요. 나갈까요?')) return;
+    location.reload();
+  });
+
+  // ================= Three.js =================
+  const stage = $('stage');
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputEncoding = THREE.sRGBEncoding;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  stage.prepend(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0xE9EDEA);
+  scene.fog = new THREE.Fog(0xE9EDEA, 45, 90);
+
+  const camera = new THREE.PerspectiveCamera(38, 1, 0.5, 300);
+  const controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.minDistance = 10;
+  controls.maxDistance = 60;
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+
+  scene.add(new THREE.HemisphereLight(0xffffff, 0xB9B2A6, 0.38));
+  const sunLight = new THREE.DirectionalLight(0xFFF6E6, 1.25);
+  sunLight.castShadow = true;
+  sunLight.shadow.mapSize.set(2048, 2048);
+  const sc = sunLight.shadow.camera;
+  sc.left = -12; sc.right = 12; sc.top = 12; sc.bottom = -12; sc.near = 1; sc.far = 80;
+  sunLight.shadow.bias = -0.0004;
+  sunLight.shadow.normalBias = 0.03;
+  scene.add(sunLight, sunLight.target);
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: 0xD9DED9, roughness: 1 }));
+  floor.rotation.x = -Math.PI / 2; floor.position.y = FLOOR_Y; floor.receiveShadow = true;
+  scene.add(floor);
+
+  const clayMat = new THREE.MeshStandardMaterial({ color: 0x8C8378, roughness: 0.82, metalness: 0.02 });
+  const sideMat = new THREE.MeshStandardMaterial({ color: 0x7F776C, roughness: 0.9 });
+  const hiddenMat = new THREE.MeshBasicMaterial({ visible: false });
+  const group = new THREE.Group();
+  scene.add(group);
+  let surf = null, plate = null;
+
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }));
+  ring.renderOrder = 10; ring.visible = false; scene.add(ring);
+
+  const target = new THREE.Vector3(0, FLOOR_Y + 7, 1);
+
+  function onResize() {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', onResize);
+  new ResizeObserver(onResize).observe(stage);
+
+  function frontView() {
+    const dist = 30 * Math.max(1, 1.25 / Math.max(camera.aspect, 0.6));
+    camera.position.set(target.x, target.y, target.z + dist);
+    controls.target.copy(target);
+    controls.update();
+  }
+  $('frontBtn').addEventListener('click', frontView);
+
+  (function loop() {
+    requestAnimationFrame(loop);
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+
+  // ================= 영상 처리 =================
+  function boxBlur(src, w, h, r) {
+    if (r < 1) return src.slice();
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h), win = 2 * r + 1;
+    for (let y = 0; y < h; y++) {
+      let s = 0; const o = y * w;
+      for (let x = -r; x <= r; x++) s += src[o + Math.min(w - 1, Math.max(0, x))];
+      for (let x = 0; x < w; x++) {
+        tmp[o + x] = s / win;
+        s += src[o + Math.min(w - 1, x + r + 1)] - src[o + Math.max(0, x - r)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      for (let y = -r; y <= r; y++) s += tmp[Math.min(h - 1, Math.max(0, y)) * w + x];
+      for (let y = 0; y < h; y++) {
+        out[y * w + x] = s / win;
+        s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+      }
+    }
+    return out;
+  }
+  function maxFilter(src, w, h, r) {
+    const tmp = new Float32Array(w * h), out = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let m = 0; const a = Math.max(0, x - r), b = Math.min(w - 1, x + r), o = y * w;
+      for (let k = a; k <= b; k++) if (src[o + k] > m) m = src[o + k];
+      tmp[o + x] = m;
+    }
+    for (let x = 0; x < w; x++) for (let y = 0; y < h; y++) {
+      let m = 0; const a = Math.max(0, y - r), b = Math.min(h - 1, y + r);
+      for (let k = a; k <= b; k++) if (tmp[k * w + x] > m) m = tmp[k * w + x];
+      out[y * w + x] = m;
+    }
+    return out;
+  }
+  function dilate(mask, w, h) {
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let v = 0;
+      for (let dy = -1; dy <= 1 && !v; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h && mask[yy * w + xx]) { v = 1; break; }
+      }
+      out[y * w + x] = v;
+    }
+    return out;
+  }
+  // distance (chamfer 3-4) from every region pixel to the nearest non-region pixel (outside the grid counts as non-region)
+  function chamfer(mask, w, h) {
+    const d = new Float32Array(w * h);
+    for (let k = 0; k < w * h; k++) d[k] = mask[k] ? 1e9 : 0;
+    const at = (x, y) => (x < 0 || y < 0 || x >= w || y >= h) ? 0 : d[y * w + x];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const k = y * w + x; if (!d[k]) continue;
+      d[k] = Math.min(d[k], at(x - 1, y) + 3, at(x, y - 1) + 3, at(x - 1, y - 1) + 4, at(x + 1, y - 1) + 4);
+    }
+    for (let y = h - 1; y >= 0; y--) for (let x = w - 1; x >= 0; x--) {
+      const k = y * w + x; if (!d[k]) continue;
+      d[k] = Math.min(d[k], at(x + 1, y) + 3, at(x, y + 1) + 3, at(x + 1, y + 1) + 4, at(x - 1, y + 1) + 4);
+    }
+    for (let k = 0; k < w * h; k++) d[k] /= 3;
+    return d;
+  }
+  const circ = (t) => Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t)));
+
+  function processImage(img) {
+    const MAXG = 220, F = 3;
+    const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    const sc = MAXG / Math.max(iw, ih);
+    const gw = Math.max(40, Math.round(iw * sc)), gh = Math.max(40, Math.round(ih * sc));
+    const cw = gw * F, ch = gh * F;
+    const cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+    const cx = cv.getContext('2d', { willReadFrequently: true });
+    cx.fillStyle = '#fff'; cx.fillRect(0, 0, cw, ch);
+    cx.drawImage(img, 0, 0, cw, ch);
+    const px = cx.getImageData(0, 0, cw, ch).data;
+    const gray = new Float32Array(cw * ch);
+    for (let k = 0, i = 0; k < gray.length; k++, i += 4) gray[k] = (px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114) / 255;
+
+    // 종이 밝기 추정(조명 얼룩 보정) → 잉크 = 종이보다 어두운 정도
+    const paper = boxBlur(maxFilter(gray, cw, ch, 8), cw, ch, 12);
+    const inkHi = new Float32Array(cw * ch);
+    for (let k = 0; k < inkHi.length; k++) inkHi[k] = Math.min(1, Math.max(0, (paper[k] - gray[k]) / Math.max(paper[k], 0.15)));
+    // 작은 격자로 줄이되 가는 선이 사라지지 않게 가장 진한 값을 남김
+    const n = gw * gh, ink = new Float32Array(n);
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+      let m = 0;
+      for (let dy = 0; dy < F; dy++) for (let dx = 0; dx < F; dx++) { const v = inkHi[(y * F + dy) * cw + x * F + dx]; if (v > m) m = v; }
+      ink[y * gw + x] = m;
+    }
+    const sorted = Array.from(ink).sort((a, b) => a - b);
+    const p98 = Math.max(0.08, sorted[Math.floor(n * 0.985)]);
+    const line = new Float32Array(n), B = new Uint8Array(n);
+    for (let k = 0; k < n; k++) {
+      const v = Math.min(1, ink[k] / p98);
+      line[k] = Math.min(1, Math.max(0, (v - 0.22) / 0.33));
+      B[k] = v > 0.38 ? 1 : 0;
+    }
+
+    // 얼굴 테두리 안쪽 찾기: 선을 살짝 두껍게 해 틈을 메운 뒤, 가장자리에서 바깥을 채워 나감
+    const Bd = dilate(dilate(B, gw, gh), gw, gh);
+    const outside = new Uint8Array(n), stack = new Int32Array(n);
+    let sp = 0;
+    const push = (k) => { if (!outside[k] && !Bd[k]) { outside[k] = 1; stack[sp++] = k; } };
+    for (let x = 0; x < gw; x++) { push(x); push((gh - 1) * gw + x); }
+    for (let y = 0; y < gh; y++) { push(y * gw); push(y * gw + gw - 1); }
+    while (sp) {
+      const k = stack[--sp], x = k % gw, y = (k / gw) | 0;
+      if (x > 0) push(k - 1); if (x < gw - 1) push(k + 1); if (y > 0) push(k - gw); if (y < gh - 1) push(k + gw);
+    }
+    let inside = new Uint8Array(n), cnt = 0;
+    {
+      // 가장 큰 덩어리 하나만 남김(종이 가장자리 그림자 같은 자잘한 조각 제거)
+      const lab = new Int32Array(n).fill(-1); let best = -1, bestA = 0, L0 = 0;
+      for (let s0 = 0; s0 < n; s0++) {
+        if (outside[s0] || lab[s0] >= 0) continue;
+        sp = 0; stack[sp++] = s0; lab[s0] = L0; let a = 0;
+        while (sp) {
+          const k = stack[--sp], x = k % gw, y = (k / gw) | 0; a++;
+          if (x > 0 && !outside[k - 1] && lab[k - 1] < 0) { lab[k - 1] = L0; stack[sp++] = k - 1; }
+          if (x < gw - 1 && !outside[k + 1] && lab[k + 1] < 0) { lab[k + 1] = L0; stack[sp++] = k + 1; }
+          if (y > 0 && !outside[k - gw] && lab[k - gw] < 0) { lab[k - gw] = L0; stack[sp++] = k - gw; }
+          if (y < gh - 1 && !outside[k + gw] && lab[k + gw] < 0) { lab[k + gw] = L0; stack[sp++] = k + gw; }
+        }
+        if (a > bestA) { bestA = a; best = L0; }
+        L0++;
+      }
+      for (let k = 0; k < n; k++) { inside[k] = lab[k] === best ? 1 : 0; cnt += inside[k]; }
+    }
+    const frac = cnt / n;
+    S.fallback = frac < 0.03 || frac > 0.97;
+    if (S.fallback) {
+      const mx = Math.round(gw * 0.04), my = Math.round(gh * 0.04); cnt = 0;
+      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
+        const v = (x >= mx && x < gw - mx && y >= my && y < gh - my) ? 1 : 0;
+        inside[y * gw + x] = v; cnt += v;
+      }
+    }
+
+    // 큰 덩어리: 테두리에서 멀수록 높게
+    const dMain = chamfer(inside, gw, gh);
+    let maxMain = 0; for (let k = 0; k < n; k++) if (dMain[k] > maxMain) maxMain = dMain[k];
+    const main = new Float32Array(n);
+    for (let k = 0; k < n; k++) main[k] = inside[k] ? circ(dMain[k] / Math.max(1, maxMain)) : 0;
+
+    // 작은 덩어리: 선으로 둘러싸인 눈·코·입 같은 부분을 각각 볼록하게
+    const B1 = dilate(B, gw, gh), comp = new Uint8Array(n);
+    for (let k = 0; k < n; k++) comp[k] = inside[k] && !B1[k] ? 1 : 0;
+    const label = new Int32Array(n).fill(-1), areas = [], maxD = [];
+    const d2 = chamfer(comp, gw, gh);
+    let L = 0;
+    for (let s = 0; s < n; s++) {
+      if (!comp[s] || label[s] >= 0) continue;
+      sp = 0; stack[sp++] = s; label[s] = L; let area = 0, md = 0;
+      while (sp) {
+        const k = stack[--sp], x = k % gw, y = (k / gw) | 0; area++; if (d2[k] > md) md = d2[k];
+        const nb = [x > 0 ? k - 1 : -1, x < gw - 1 ? k + 1 : -1, y > 0 ? k - gw : -1, y < gh - 1 ? k + gw : -1];
+        for (const q of nb) if (q >= 0 && comp[q] && label[q] < 0) { label[q] = L; stack[sp++] = q; }
+      }
+      areas.push(area); maxD.push(md); L++;
+    }
+    const sub = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      const l = label[k]; if (l < 0 || areas[l] < 6) continue;
+      const amp = 0.35 + 0.65 * Math.min(1, Math.sqrt(areas[l] / Math.max(1, cnt)) / 0.45);
+      sub[k] = circ(d2[k] / Math.max(1, maxD[l])) * amp;
+    }
+    let H = new Float32Array(n);
+    for (let k = 0; k < n; k++) H[k] = inside[k] ? 0.55 * main[k] + 0.45 * sub[k] : 0;
+    H = boxBlur(boxBlur(H, gw, gh, 1), gw, gh, 1);
+    let hm = 0; for (let k = 0; k < n; k++) { if (!inside[k]) H[k] = 0; if (H[k] > hm) hm = H[k]; }
+    for (let k = 0; k < n; k++) H[k] /= (hm || 1);
+
+    Object.assign(S, { gw, gh, n, inside, main, H0: H, groove: boxBlur(line, gw, gh, 1), P: new Float32Array(n), undo: [] });
+    const big = 14;
+    S.Wd = gw >= gh ? big : big * gw / gh;
+    S.Hd = gh >= gw ? big : big * gh / gw;
+    buildMeshes();
+  }
+
+  // ================= 입체 만들기 =================
+  function heightAt(k) {
+    const lv = 0.08 + 0.92 * S.amount;
+    return Math.max(0.05, PLATE + lv * 3.2 * S.H0[k] - S.groove[k] * (0.05 + 0.15 * lv) + S.P[k]);
+  }
+
+  function makeGrid(masked, isBack) {
+    const { gw, gh, Wd, Hd, inside } = S;
+    const pos = new Float32Array(gw * gh * 3);
+    for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+      const k = j * gw + i;
+      pos[k * 3] = (i / (gw - 1) - 0.5) * Wd;
+      pos[k * 3 + 1] = (0.5 - j / (gh - 1)) * Hd;
+    }
+    const idx = [];
+    for (let j = 0; j < gh - 1; j++) for (let i = 0; i < gw - 1; i++) {
+      const a = j * gw + i, b = a + 1, c = a + gw, d = c + 1;
+      if (masked && !(inside[a] && inside[b] && inside[c] && inside[d])) continue;
+      if (!isBack) idx.push(a, c, b, b, c, d); else idx.push(a, b, c, b, d, c);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setIndex(idx);
+    return g;
+  }
+
+  function buildMeshes() {
+    for (const m of [surf, plate]) if (m) { group.remove(m); m.geometry.dispose(); }
+    surf = new THREE.Mesh(makeGrid(false, false), clayMat);
+    surf.castShadow = surf.receiveShadow = true;
+    group.add(surf);
+    // 앞면은 빼고 옆면·뒷면만 그린 바탕판
+    plate = new THREE.Mesh(new THREE.BoxGeometry(S.Wd, S.Hd, PLATE), [sideMat, sideMat, sideMat, sideMat, hiddenMat, sideMat]);
+    plate.position.z = PLATE / 2;
+    plate.castShadow = plate.receiveShadow = true;
+    group.add(plate);
+    group.position.set(0, FLOOR_Y + S.Hd / 2 + 0.02, 0);
+    updateHeights();
+    const box = new THREE.Box3().setFromObject(group);
+    box.getCenter(target);
+    controls.target.copy(target);
+    aimLight();
+  }
+
+  function updateHeights() {
+    if (!surf) return;
+    const pos = surf.geometry.attributes.position.array;
+    for (let k = 0; k < S.n; k++) pos[k * 3 + 2] = heightAt(k);
+    const g = surf.geometry;
+    g.attributes.position.needsUpdate = true;
+    g.computeVertexNormals();
+    g.computeBoundingSphere();
+    g.computeBoundingBox();
+  }
+
+  // ================= 예시 그림 =================
+  function sampleSketch() {
+    const c = document.createElement('canvas'); c.width = c.height = 600;
+    const x = c.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, 600, 600);
+    x.strokeStyle = '#111'; x.lineWidth = 11; x.lineJoin = 'round'; x.lineCap = 'round';
+    // 테두리(뿔과 갈기)
+    x.beginPath();
+    const N = 64;
+    for (let i = 0; i <= N; i++) {
+      const a = -Math.PI / 2 + (i / N) * Math.PI * 2;
+      let r = 235 + (i % 2 ? -18 : 14);
+      const deg = ((a * 180 / Math.PI) + 360) % 360;
+      if (Math.abs(deg - 235) < 9 || Math.abs(deg - 305) < 9) r = 290;
+      const px = 300 + Math.cos(a) * r * 0.92, py = 315 + Math.sin(a) * r;
+      i ? x.lineTo(px, py) : x.moveTo(px, py);
+    }
+    x.closePath(); x.stroke();
+    // 눈썹
+    x.beginPath(); x.moveTo(160, 220); x.lineTo(270, 255); x.moveTo(440, 220); x.lineTo(330, 255); x.stroke();
+    // 눈
+    x.beginPath(); x.ellipse(220, 285, 48, 36, 0, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); x.ellipse(380, 285, 48, 36, 0, 0, Math.PI * 2); x.stroke();
+    x.beginPath(); x.arc(220, 288, 13, 0, Math.PI * 2); x.arc(380, 288, 13, 0, Math.PI * 2); x.fill();
+    // 코
+    x.beginPath(); x.ellipse(300, 360, 46, 30, 0, 0, Math.PI * 2); x.stroke();
+    // 입과 이빨
+    x.beginPath(); x.roundRect ? x.roundRect(175, 415, 250, 95, 30) : x.rect(175, 415, 250, 95); x.stroke();
+    x.beginPath();
+    for (let i = 0; i <= 6; i++) { const px = 175 + i * 250 / 6; x.lineTo(px, i % 2 ? 452 : 418); }
+    x.moveTo(205, 508); x.lineTo(222, 462); x.lineTo(240, 508);
+    x.moveTo(360, 508); x.lineTo(378, 462); x.lineTo(395, 508);
+    x.stroke();
+    return c;
+  }
+
+  function loadSample() {
+    const c = sampleSketch();
+    $('thumb').style.backgroundImage = `url(${c.toDataURL('image/png')})`;
+    $('thumbTag').classList.remove('hidden');
+    S.isSample = true;
+    processImage(c);
+  }
+
+  // ================= 사진 올리기 =================
+  $('uploadBtn').addEventListener('click', () => $('file').click());
+  $('file').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!f) return;
+    busy(true, '입체로 바꾸는 중…');
+    const url = URL.createObjectURL(f);
+    const img = new Image();
+    img.onload = () => {
+      setTimeout(() => {
+        try {
+          processImage(img);
+          $('thumb').style.backgroundImage = `url(${url})`;
+          $('thumbTag').classList.add('hidden');
+          S.isSample = false;
+          frontView();
+          toast(S.fallback
+            ? '얼굴 테두리 선이 끊겨 있어서 판 전체를 높였어요. 테두리 선을 이어서 다시 찍으면 더 잘 만들어져요.'
+            : '입체로 바꿨어요. 빛을 옮겨 가며 그림자를 살펴보세요.', S.fallback ? 5200 : 2600);
+        } catch (err) {
+          console.error(err);
+          toast('사진을 바꾸지 못했어요. 다른 사진으로 다시 해 보세요.');
+        }
+        busy(false);
+      }, 30);
+    };
+    img.onerror = () => { busy(false); toast('사진 파일을 열 수 없어요. JPG나 PNG 사진을 골라요.'); };
+    img.src = url;
+  });
+
+  // ================= 전체 높이 =================
+  function nowText() {
+    const a = S.amount;
+    return a < 0.35 ? '지금은 낮게 튀어나온 저부조예요' : a > 0.65 ? '지금은 높게 튀어나온 고부조예요' : '지금은 중간 높이예요';
+  }
+  function drawAmount() {
+    const a = S.amount, hx = 24 + 252 * a, top = 70 - (8 + 52 * a);
+    $('amountNow').textContent = nowText();
+    $('amountSvg').innerHTML =
+      `<rect x="18" y="70" width="264" height="12" rx="2" fill="#C9C1B7"/>
+       <path d="M70 70 C 100 ${top}, 200 ${top}, 230 70 Z" fill="#8A7F74"/>
+       <line x1="${hx}" y1="6" x2="${hx}" y2="86" stroke="#3E6B58" stroke-width="3"/>
+       <circle cx="${hx}" cy="46" r="13" fill="#3E6B58" stroke="#fff" stroke-width="3"/>`;
+  }
+
+  (function amountDrag() {
+    const el = $('amount');
+    let on = false, raf = 0;
+    const set = (e) => {
+      const r = el.getBoundingClientRect();
+      const a = Math.min(1, Math.max(0, (e.clientX - r.left - r.width * 0.08) / (r.width * 0.84)));
+      S.amount = a;
+      drawAmount();
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; updateHeights(); });
+    };
+    el.addEventListener('pointerdown', (e) => { on = true; el.setPointerCapture(e.pointerId); set(e); });
+    el.addEventListener('pointermove', (e) => { if (on) set(e); });
+    el.addEventListener('pointerup', () => { on = false; });
+    el.addEventListener('pointercancel', () => { on = false; });
+  })();
+
+  // ================= 부분 높이 바꾸기 =================
+  document.querySelectorAll('[data-brush]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-brush]').forEach((x) => x.classList.toggle('on', x === b));
+    S.brush = parseFloat(b.dataset.brush);
+  }));
+  $('undoBtn').addEventListener('click', () => {
+    if (!S.undo.length) { toast('되돌릴 것이 없어요.', 1600); return; }
+    S.P = S.undo.pop(); updateHeights();
+  });
+  $('resetBtn').addEventListener('click', () => {
+    S.undo.push(S.P.slice()); S.P = new Float32Array(S.n); updateHeights();
+    toast('부분 높이를 처음대로 돌렸어요.', 1800);
+  });
+
+  const HINT = {
+    rotate: '한 손가락으로 돌리고, 두 손가락으로 크게·작게 볼 수 있어요',
+    raise: '높이고 싶은 곳을 손가락으로 문질러요',
+    lower: '낮추고 싶은 곳을 손가락으로 문질러요',
+  };
+  function setTool(t) {
+    S.tool = t;
+    document.querySelectorAll('#toolSeg button').forEach((b) => b.classList.toggle('on', b.dataset.tool === t));
+    controls.enabled = t === 'rotate';
+    $('hint').textContent = HINT[t];
+  }
+  document.querySelectorAll('#toolSeg button').forEach((b) => b.addEventListener('click', () => setTool(b.dataset.tool)));
+
+  (function brush() {
+    const cv = renderer.domElement, ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+    const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hitPt = new THREE.Vector3();
+    let stroke = null, raf = 0;
+    const toNdc = (e) => {
+      const r = cv.getBoundingClientRect();
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+    };
+    function stamp(world) {
+      const lp = group.worldToLocal(world.clone());
+      const gi = (lp.x / S.Wd + 0.5) * (S.gw - 1), gj = (0.5 - lp.y / S.Hd) * (S.gh - 1);
+      const R = S.brush * Math.max(S.gw, S.gh), lim = Math.ceil(R * 1.6), sign = S.tool === 'raise' ? 1 : -1;
+      const i0 = Math.max(0, Math.floor(gi - lim)), i1 = Math.min(S.gw - 1, Math.ceil(gi + lim));
+      const j0 = Math.max(0, Math.floor(gj - lim)), j1 = Math.min(S.gh - 1, Math.ceil(gj + lim));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const d2 = ((i - gi) ** 2 + (j - gj) ** 2) / (R * R);
+        if (d2 > 2.56) continue;
+        const k = j * S.gw + i;
+        S.P[k] = Math.max(-2.5, Math.min(3.5, S.P[k] + sign * 0.09 * Math.exp(-d2 * 2.2)));
+      }
+      ring.position.copy(world);
+      ring.position.z += 0.05;
+    }
+    function strokeTo(world) {
+      // 손가락이 빨리 움직여도 끊기지 않게 사이사이를 채움
+      const step = S.brush * Math.max(S.Wd, S.Hd) * 0.3;
+      const from = stroke.last, dist = from.distanceTo(world), cnt = Math.max(1, Math.ceil(dist / step));
+      for (let s2 = 1; s2 <= cnt; s2++) stamp(from.clone().lerp(world, s2 / cnt));
+      stroke.last.copy(world);
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; updateHeights(); });
+    }
+    cv.addEventListener('pointerdown', (e) => {
+      if (S.tool === 'rotate' || !surf) return;
+      toNdc(e);
+      const h = ray.intersectObject(surf, false)[0];
+      if (!h) { toast('작품 위를 문질러 주세요.', 1400); return; }
+      cv.setPointerCapture(e.pointerId);
+      // 문지르는 동안은 처음 닿은 높이의 평면을 따라감(빠르고 안정적)
+      plane.constant = -h.point.z;
+      stroke = { P0: S.P.slice(), last: h.point.clone(), id: e.pointerId };
+      const R = S.brush * Math.max(S.Wd, S.Hd);
+      ring.scale.setScalar(R);
+      ring.material.color.set(S.tool === 'raise' ? 0xffffff : 0x1E2925);
+      ring.visible = true;
+      stamp(h.point);
+      updateHeights();
+    });
+    cv.addEventListener('pointermove', (e) => {
+      if (!stroke || e.pointerId !== stroke.id) return;
+      toNdc(e);
+      if (ray.ray.intersectPlane(plane, hitPt)) strokeTo(hitPt.clone());
+    });
+    const end = (e) => {
+      if (!stroke || (e && e.pointerId !== stroke.id)) return;
+      S.undo.push(stroke.P0); if (S.undo.length > 20) S.undo.shift();
+      stroke = null; ring.visible = false;
+      updateHeights();
+    };
+    cv.addEventListener('pointerup', end);
+    cv.addEventListener('pointercancel', end);
+  })();
+
+  // ================= 빛 =================
+  const pad = $('pad'), sun = $('sun'), bump = $('bump');
+  function aimLight() {
+    const { x, y } = S.light, r = Math.min(1, Math.hypot(x, y));
+    const t = r * (78 * Math.PI / 180);
+    const ux = r > 0.001 ? x / r : 0, uy = r > 0.001 ? y / r : 0;
+    const dir = new THREE.Vector3(ux * Math.sin(t), -uy * Math.sin(t), Math.cos(t)).normalize();
+    sunLight.position.copy(target).addScaledVector(dir, 34);
+    sunLight.target.position.copy(target);
+    sunLight.target.updateMatrixWorld();
+    // 패드 표시
+    const R = pad.clientWidth / 2 || 110, rr = R - 30;
+    sun.style.left = R + x * rr + 'px';
+    sun.style.top = R + y * rr + 'px';
+    const sx = -x * 12, sy = -y * 12;
+    bump.style.boxShadow = `${sx}px ${sy}px ${4 + r * 8}px rgba(0,0,0,${0.18 + r * 0.32}),
+      inset ${x * -9}px ${y * -9}px 10px rgba(0,0,0,.28), inset ${x * 7}px ${y * 7}px 9px rgba(255,255,255,.35)`;
+  }
+  (function padDrag() {
+    let on = false;
+    const set = (e) => {
+      const r = pad.getBoundingClientRect(), R = r.width / 2, rr = R - 30;
+      let x = (e.clientX - r.left - R) / rr, y = (e.clientY - r.top - R) / rr;
+      const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+      S.light = { x, y }; aimLight();
+      document.querySelectorAll('[data-light]').forEach((c) => c.classList.remove('on'));
+    };
+    pad.addEventListener('pointerdown', (e) => { on = true; pad.setPointerCapture(e.pointerId); set(e); });
+    pad.addEventListener('pointermove', (e) => { if (on) set(e); });
+    pad.addEventListener('pointerup', () => { on = false; });
+    pad.addEventListener('pointercancel', () => { on = false; });
+  })();
+  document.querySelectorAll('[data-light]').forEach((c) => c.addEventListener('click', () => {
+    const [x, y] = c.dataset.light.split(',').map(Number);
+    S.light = { x, y }; aimLight();
+    document.querySelectorAll('[data-light]').forEach((o) => o.classList.toggle('on', o === c));
+  }));
+
+  // ================= 찍기 · 저장 =================
+  let lastBlob = null, lastName = '';
+  $('shootBtn').addEventListener('click', () => {
+    if (S.isSample) {
+      if (!confirm('지금은 예시 그림이에요. 그래도 찍을까요? (내 스케치를 먼저 올리는 것을 추천해요)')) return;
+    }
+    ring.visible = false;
+    renderer.render(scene, camera);
+    const src = renderer.domElement, W = src.width, H = src.height;
+    const out = document.createElement('canvas'); out.width = W; out.height = H;
+    const x = out.getContext('2d');
+    x.drawImage(src, 0, 0);
+    const s = W / 1200;
+    const a = S.amount, detail = '부조' + (a < 0.35 ? ' (저부조)' : a > 0.65 ? ' (고부조)' : ' (중간 높이)');
+    const line1 = `${S.id} ${S.name}`, line2 = `나만의 수호신 귀면와  |  ${detail}`;
+    x.font = `800 ${Math.round(30 * s)}px "Pretendard","Noto Sans KR",sans-serif`;
+    const w1 = x.measureText(line1).width;
+    x.font = `600 ${Math.round(20 * s)}px "Pretendard","Noto Sans KR",sans-serif`;
+    const w2 = x.measureText(line2).width;
+    const bw = Math.max(w1, w2) + 48 * s, bh = 92 * s, bx = 24 * s, by = H - bh - 24 * s;
+    x.fillStyle = 'rgba(30,41,37,0.82)';
+    x.beginPath(); x.roundRect ? x.roundRect(bx, by, bw, bh, 16 * s) : x.rect(bx, by, bw, bh); x.fill();
+    x.fillStyle = '#fff'; x.textBaseline = 'alphabetic';
+    x.font = `800 ${Math.round(30 * s)}px "Pretendard","Noto Sans KR",sans-serif`;
+    x.fillText(line1, bx + 24 * s, by + 42 * s);
+    x.fillStyle = '#CFE0D6';
+    x.font = `600 ${Math.round(20 * s)}px "Pretendard","Noto Sans KR",sans-serif`;
+    x.fillText(line2, bx + 24 * s, by + 74 * s);
+
+    const safe = S.name.replace(/[\\/:*?"<>|\s]/g, '');
+    lastName = `${S.id}_${safe}_귀면와_부조.png`;
+    out.toBlob((blob) => {
+      lastBlob = blob;
+      $('shotImg').src = URL.createObjectURL(blob);
+      $('shotName').textContent = `파일 이름: ${lastName}`;
+      const canShare = !!(navigator.canShare && navigator.canShare({ files: [new File([blob], lastName, { type: 'image/png' })] }));
+      $('shareBtn').classList.toggle('hidden', !canShare);
+      $('shot').classList.remove('hidden');
+    }, 'image/png');
+  });
+  $('saveBtn').addEventListener('click', () => {
+    if (!lastBlob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(lastBlob); a.download = lastName;
+    document.body.appendChild(a); a.click(); a.remove();
+    toast(`저장했어요: ${lastName}`, 2600);
+  });
+  $('shareBtn').addEventListener('click', async () => {
+    if (!lastBlob) return;
+    try {
+      await navigator.share({ files: [new File([lastBlob], lastName, { type: 'image/png' })], title: lastName });
+    } catch (e) { /* 공유 창을 닫은 경우 */ }
+  });
+  $('closeShot').addEventListener('click', () => $('shot').classList.add('hidden'));
+
+  // ================= 도우미 =================
+  function busy(on, text) {
+    if (text) $('busyText').textContent = text;
+    $('busy').classList.toggle('hidden', !on);
+  }
+  let toastTimer = 0;
+  function toast(msg, ms = 2400) {
+    const t = $('toast'); t.textContent = msg; t.classList.remove('hidden');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), ms);
+  }
+
+  // ================= 시작 =================
+  setTool('rotate');
+  drawAmount();
+  loadSample();
+  onResize();
+  frontView();
+  aimLight();
+})();
+</script>
+</body>
+</html>
