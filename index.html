@@ -320,10 +320,14 @@
 
       <section class="step">
         <h2><b>3</b>부분 높이 바꾸기</h2>
-        <p class="note" style="margin-top:0">위쪽의 ‘높이기’나 ‘낮추기’를 누르고 작품 위를 손가락으로 문질러요. 문지른 곳이 조금씩 높아지거나 낮아져요.</p>
+        <p class="note" style="margin-top:0">위쪽의 ‘높이기’나 ‘낮추기’를 누르고 작품 위를 손가락으로 문질러요. 여러 번 문지를수록 조금씩 높아지거나 낮아져요.</p>
         <div class="row">
           <button class="chip on" data-brush="0.06">붓 좁게</button>
           <button class="chip" data-brush="0.12">붓 넓게</button>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="chip on" data-power="0.012">살살</button>
+          <button class="chip" data-power="0.03">조금 세게</button>
           <div class="spacer"></div>
           <button class="chip" id="undoBtn">되돌리기</button>
           <button class="chip" id="resetBtn">처음으로</button>
@@ -380,7 +384,7 @@
   // ================= 상태 =================
   const S = {
     id: '', name: '',
-    tool: 'rotate', brush: 0.06, amount: 0.6, terrace: false, view: 'clay',
+    tool: 'rotate', brush: 0.06, power: 0.012, amount: 0.6, terrace: false, view: 'clay',
     light: { x: -0.62, y: -0.45 },
     gw: 0, gh: 0, n: 0, Wd: 14, Hd: 14,
     inside: null, main: null, H0: null, groove: null, P: null,
@@ -645,12 +649,30 @@
       for (let y = my; y < gh - my; y++) for (let x = mx; x < gw - mx; x++) { inside[y * gw + x] = 1; cnt++; }
     }
 
-    // 1) 얼굴 전체 덩어리: 가장자리는 둥글게 깎이고 윗면은 완만한 덩어리
+    // 1) 얼굴 전체 덩어리: 얼굴 모양 틀(가운데 코 쪽이 가장 높고, 눈썹·광대가 도드라지고, 옆으로 갈수록 낮아짐)을
+    //    스케치 테두리에 맞춰 씌우고, 가장자리는 바탕까지 둥글게 내려가게 함
     const dMain = chamfer(inside, gw, gh);
-    let maxMain = 0; for (let k = 0; k < n; k++) if (dMain[k] > maxMain) maxMain = dMain[k];
-    const wMain = Math.max(3, maxMain * 0.22);
-    const main = new Float32Array(n);
-    for (let k = 0; k < n; k++) main[k] = inside[k] ? 0.72 * circ(Math.min(1, dMain[k] / wMain)) + 0.28 * circ(dMain[k] / Math.max(1, maxMain)) : 0;
+    let maxMain = 0, bx0 = gw, bx1 = 0, by0 = gh, by1 = 0;
+    for (let k = 0; k < n; k++) if (inside[k]) {
+      if (dMain[k] > maxMain) maxMain = dMain[k];
+      const x = k % gw, y = (k / gw) | 0;
+      if (x < bx0) bx0 = x; if (x > bx1) bx1 = x; if (y < by0) by0 = y; if (y > by1) by1 = y;
+    }
+    const fcx = (bx0 + bx1) / 2, fhw = Math.max(1, (bx1 - bx0) / 2), fh = Math.max(1, by1 - by0);
+    const G2 = (a, s) => Math.exp(-(a * a) / (2 * s * s));
+    const main = new Float32Array(n), edgeF = new Float32Array(n);
+    for (let k = 0; k < n; k++) {
+      if (!inside[k]) continue;
+      const u = ((k % gw) - fcx) / fhw, v = (((k / gw) | 0) - by0) / fh, au = Math.abs(u);
+      const tpl = 0.55 * Math.max(0, 1 - 0.6 * u * u) * (0.75 + 0.25 * G2(v - 0.5, 0.35))   // 앞으로 둥글게 나온 얼굴
+        + 0.42 * G2(u, 0.15) * G2(v - 0.56, 0.13)                                           // 코
+        + 0.20 * G2(au - 0.3, 0.16) * G2(v - 0.33, 0.07)                                    // 눈썹 뼈
+        + 0.16 * G2(au - 0.42, 0.15) * G2(v - 0.63, 0.12)                                   // 광대
+        - 0.10 * G2(au - 0.3, 0.12) * G2(v - 0.44, 0.06);                                   // 눈두덩 살짝 들어감
+      const edge = circ(Math.min(1, dMain[k] / Math.max(3, maxMain * 0.32)));              // 가장자리 둥글게
+      edgeF[k] = edge;
+      main[k] = edge * (0.3 + 0.7 * Math.max(0, tpl));
+    }
 
     // 2) 선으로 둘러싸인 부분(눈·코·입·뿔 등)을 한 층 더 올림
     const B1 = dilate(B, gw, gh), comp = new Uint8Array(n);
@@ -681,12 +703,12 @@
       feat[k] = amp * (0.65 * circ(Math.min(1, d2[k] / w)) + 0.35 * circ(d2[k] / Math.max(1, maxD[l])));
     }
     let H = new Float32Array(n);
-    for (let k = 0; k < n; k++) H[k] = inside[k] ? main[k] + 0.42 * feat[k] : 0;
-    H = boxBlur(H, gw, gh, 1);
+    for (let k = 0; k < n; k++) H[k] = inside[k] ? main[k] + 0.32 * feat[k] * (0.6 + 0.4 * main[k]) : 0;
+    H = boxBlur(boxBlur(H, gw, gh, 1), gw, gh, 1);
     let hm = 0; for (let k = 0; k < n; k++) { if (!inside[k]) H[k] *= 0.3; if (H[k] > hm) hm = H[k]; }
     for (let k = 0; k < n; k++) H[k] /= (hm || 1);
 
-    Object.assign(S, { gw, gh, n, inside, main, H0: H, groove: boxBlur(line, gw, gh, 1), P: new Float32Array(n), undo: [] });
+    Object.assign(S, { gw, gh, n, inside, main, edgeF, H0: H, groove: boxBlur(line, gw, gh, 1), P: new Float32Array(n), undo: [] });
     const big = 14;
     S.Wd = gw >= gh ? big : big * gw / gh;
     S.Hd = gh >= gw ? big : big * gh / gw;
@@ -702,7 +724,7 @@
   }
   function heightAt(k) {
     const lv = 0.08 + 0.92 * S.amount, H = S.terrace ? terrace(S.H0[k]) : S.H0[k];
-    return Math.max(0.05, PLATE + lv * 3.2 * H - S.groove[k] * (0.05 + 0.15 * lv) + S.P[k]);
+    return Math.max(PLATE * 0.6, PLATE + lv * 3.2 * H - S.groove[k] * (0.08 + 0.22 * lv) + S.P[k]);
   }
 
   function makeGrid(masked, isBack) {
@@ -933,6 +955,10 @@
     document.querySelectorAll('[data-brush]').forEach((x) => x.classList.toggle('on', x === b));
     S.brush = parseFloat(b.dataset.brush);
   }));
+  document.querySelectorAll('[data-power]').forEach((b) => b.addEventListener('click', () => {
+    document.querySelectorAll('[data-power]').forEach((x) => x.classList.toggle('on', x === b));
+    S.power = parseFloat(b.dataset.power);
+  }));
   $('undoBtn').addEventListener('click', () => {
     if (!S.undo.length) { toast('되돌릴 것이 없어요.', 1600); return; }
     S.P = S.undo.pop(); updateHeights();
@@ -979,7 +1005,10 @@
         const d2 = ((i - gi) ** 2 + (j - gj) ** 2) / (R * R);
         if (d2 > 2.56) continue;
         const k = j * S.gw + i;
-        S.P[k] = Math.max(-2.5, Math.min(3.5, S.P[k] + sign * 0.09 * Math.exp(-d2 * 2.2)));
+        // 배경(얼굴 바깥)은 바뀌지 않고, 테두리 근처는 부드럽게 덜 바뀜
+        if (!S.inside[k]) continue;
+        const fade = Math.min(1, S.edgeF[k] * 1.5);
+        S.P[k] = Math.max(-2.5, Math.min(3.5, S.P[k] + sign * S.power * fade * Math.exp(-d2 * 2.2)));
       }
       ring.position.copy(world);
       ring.position.z += 0.05;
