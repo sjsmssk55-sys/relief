@@ -108,6 +108,11 @@
     font-size: 15px; font-weight: 600; white-space: nowrap; pointer-events: none;
     max-width: calc(100% - 28px); overflow: hidden; text-overflow: ellipsis;
   }
+  .legend {
+    position: absolute; left: 14px; top: 84px; background: rgba(251,252,251,.94); border: 1px solid var(--line);
+    border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px; font-size: 14px; font-weight: 700;
+  }
+  .legend i { display: inline-block; width: 16px; height: 16px; border-radius: 4px; margin-right: 8px; vertical-align: -3px; }
   .drag-chip {
     position: absolute; pointer-events: none; transform: translate(-50%, -140%);
     background: var(--ink); color: #fff; font-weight: 800; font-size: 16px;
@@ -275,6 +280,13 @@
       <div class="spacer"></div>
       <div class="pill"><span class="who" id="who"></span><button class="chip" id="logoutBtn" style="height:40px">나가기</button></div>
     </div>
+    <div class="legend hidden" id="legend">
+      <span><i style="background:#B8432F"></i>4층 가장 높은 곳</span>
+      <span><i style="background:#3E6B58"></i>3층</span>
+      <span><i style="background:#5B7F6E"></i>2층</span>
+      <span><i style="background:#8A7F74"></i>1층</span>
+      <span><i style="background:#C9C1B7"></i>0층 바탕</span>
+    </div>
     <div class="hint" id="hint"></div>
       </div>
 
@@ -295,6 +307,15 @@
         <div class="amount" id="amount"><svg id="amountSvg" viewBox="0 0 300 92" preserveAspectRatio="none"></svg></div>
         <div class="amount-labels"><span>낮게<small>저부조</small></span><span>높게<small>고부조</small></span></div>
         <p class="now" id="amountNow"></p>
+        <div class="row">
+          <button class="chip" id="terraceBtn">층층이 나누기 (0~4층)</button>
+        </div>
+        <p class="sub-title">보는 방법</p>
+        <div class="row" style="margin-top:6px">
+          <button class="chip on" data-view="clay">유토</button>
+          <button class="chip" data-view="layers">층 색깔</button>
+          <button class="chip" data-view="wire">그물망</button>
+        </div>
       </section>
 
       <section class="step">
@@ -359,7 +380,7 @@
   // ================= 상태 =================
   const S = {
     id: '', name: '',
-    tool: 'rotate', brush: 0.06, amount: 0.6,
+    tool: 'rotate', brush: 0.06, amount: 0.6, terrace: false, view: 'clay',
     light: { x: -0.62, y: -0.45 },
     gw: 0, gh: 0, n: 0, Wd: 14, Hd: 14,
     inside: null, main: null, H0: null, groove: null, P: null,
@@ -387,11 +408,13 @@
 
   // ================= Three.js =================
   const stage = $('stage');
-  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  // 태블릿 화면은 해상도가 매우 높아서, 그리는 점의 수를 줄여 부담을 덜어 줌
+  const DPR = window.devicePixelRatio || 1;
+  const renderer = new THREE.WebGLRenderer({ antialias: DPR < 1.5, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
+  renderer.setPixelRatio(Math.min(DPR, 1.5));
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   stage.prepend(renderer.domElement);
 
   const scene = new THREE.Scene();
@@ -409,9 +432,9 @@
   scene.add(new THREE.HemisphereLight(0xffffff, 0xB9B2A6, 0.38));
   const sunLight = new THREE.DirectionalLight(0xFFF6E6, 1.25);
   sunLight.castShadow = true;
-  sunLight.shadow.mapSize.set(2048, 2048);
+  sunLight.shadow.mapSize.set(1536, 1536);
   const sc = sunLight.shadow.camera;
-  sc.left = -12; sc.right = 12; sc.top = 12; sc.bottom = -12; sc.near = 1; sc.far = 80;
+  sc.left = -9.5; sc.right = 9.5; sc.top = 9.5; sc.bottom = -9.5; sc.near = 1; sc.far = 80;
   sunLight.shadow.bias = -0.0004;
   sunLight.shadow.normalBias = 0.03;
   scene.add(sunLight, sunLight.target);
@@ -421,11 +444,14 @@
   scene.add(floor);
 
   const clayMat = new THREE.MeshStandardMaterial({ color: 0x8C8378, roughness: 0.82, metalness: 0.02 });
+  const layerMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 });
+  const wireMat = new THREE.LineBasicMaterial({ color: 0x1E2925, transparent: true, opacity: 0.45 });
+  const LAYER_COLORS = [0xC9C1B7, 0x8A7F74, 0x5B7F6E, 0x3E6B58, 0xB8432F].map((c) => new THREE.Color(c).convertSRGBToLinear());
   const sideMat = new THREE.MeshStandardMaterial({ color: 0x7F776C, roughness: 0.9 });
   const hiddenMat = new THREE.MeshBasicMaterial({ visible: false });
   const group = new THREE.Group();
   scene.add(group);
-  let surf = null, plate = null;
+  let surf = null, plate = null, wire = null, wirePairs = null;
 
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.92, 1, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false }));
   ring.renderOrder = 10; ring.visible = false; scene.add(ring);
@@ -436,7 +462,7 @@
     const w = stage.clientWidth, h = stage.clientHeight;
     if (!w || !h) return;
     renderer.setSize(w, h, false);
-    camera.aspect = w / h; camera.updateProjectionMatrix();
+    camera.aspect = w / h; camera.updateProjectionMatrix(); invalidate();
   }
   window.addEventListener('resize', onResize);
   new ResizeObserver(onResize).observe(stage);
@@ -449,10 +475,14 @@
   }
   $('frontBtn').addEventListener('click', frontView);
 
+  // 바뀐 것이 있을 때만 다시 그림(가만히 있을 때는 쉬어서 버벅임과 발열을 줄임)
+  let dirty = true;
+  const invalidate = () => { dirty = true; };
+  controls.addEventListener('change', invalidate);
   (function loop() {
     requestAnimationFrame(loop);
-    controls.update();
-    renderer.render(scene, camera);
+    const moved = controls.update();
+    if (dirty || moved) { renderer.render(scene, camera); dirty = false; }
   })();
 
   // ================= 영상 처리 =================
@@ -519,10 +549,46 @@
     for (let k = 0; k < w * h; k++) d[k] /= 3;
     return d;
   }
+  function erode(mask, w, h) {
+    const inv = new Uint8Array(w * h);
+    for (let k = 0; k < w * h; k++) inv[k] = mask[k] ? 0 : 1;
+    const d = dilate(inv, w, h), out = new Uint8Array(w * h);
+    for (let k = 0; k < w * h; k++) out[k] = d[k] ? 0 : 1;
+    return out;
+  }
+  // 바깥(가장자리와 이어진 빈 곳)을 채운 뒤, 남은 곳 중 가장 큰 덩어리를 안쪽으로 봄
+  function enclosed(Bd, w, h, stack) {
+    const n = w * h, outside = new Uint8Array(n);
+    let sp = 0;
+    const push = (k) => { if (!outside[k] && !Bd[k]) { outside[k] = 1; stack[sp++] = k; } };
+    for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+    for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+    while (sp) {
+      const k = stack[--sp], x = k % w, y = (k / w) | 0;
+      if (x > 0) push(k - 1); if (x < w - 1) push(k + 1); if (y > 0) push(k - w); if (y < h - 1) push(k + w);
+    }
+    const lab = new Int32Array(n).fill(-1); let best = -1, bestA = 0, L0 = 0;
+    for (let s0 = 0; s0 < n; s0++) {
+      if (outside[s0] || lab[s0] >= 0) continue;
+      sp = 0; stack[sp++] = s0; lab[s0] = L0; let a = 0;
+      while (sp) {
+        const k = stack[--sp], x = k % w, y = (k / w) | 0; a++;
+        if (x > 0 && !outside[k - 1] && lab[k - 1] < 0) { lab[k - 1] = L0; stack[sp++] = k - 1; }
+        if (x < w - 1 && !outside[k + 1] && lab[k + 1] < 0) { lab[k + 1] = L0; stack[sp++] = k + 1; }
+        if (y > 0 && !outside[k - w] && lab[k - w] < 0) { lab[k - w] = L0; stack[sp++] = k - w; }
+        if (y < h - 1 && !outside[k + w] && lab[k + w] < 0) { lab[k + w] = L0; stack[sp++] = k + w; }
+      }
+      if (a > bestA) { bestA = a; best = L0; }
+      L0++;
+    }
+    const inside = new Uint8Array(n); let cnt = 0;
+    for (let k = 0; k < n; k++) if (lab[k] === best) { inside[k] = 1; cnt++; }
+    return { inside, cnt };
+  }
   const circ = (t) => Math.sqrt(Math.max(0, 1 - (1 - t) * (1 - t)));
 
   function processImage(img) {
-    const MAXG = 220, F = 3;
+    const MAXG = 240, F = 3;
     const iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
     const sc = MAXG / Math.max(iw, ih);
     const gw = Math.max(40, Math.round(iw * sc)), gh = Math.max(40, Math.round(ih * sc));
@@ -555,78 +621,69 @@
       B[k] = v > 0.38 ? 1 : 0;
     }
 
-    // 얼굴 테두리 안쪽 찾기: 선을 살짝 두껍게 해 틈을 메운 뒤, 가장자리에서 바깥을 채워 나감
-    const Bd = dilate(dilate(B, gw, gh), gw, gh);
-    const outside = new Uint8Array(n), stack = new Int32Array(n);
-    let sp = 0;
-    const push = (k) => { if (!outside[k] && !Bd[k]) { outside[k] = 1; stack[sp++] = k; } };
-    for (let x = 0; x < gw; x++) { push(x); push((gh - 1) * gw + x); }
-    for (let y = 0; y < gh; y++) { push(y * gw); push(y * gw + gw - 1); }
-    while (sp) {
-      const k = stack[--sp], x = k % gw, y = (k / gw) | 0;
-      if (x > 0) push(k - 1); if (x < gw - 1) push(k + 1); if (y > 0) push(k - gw); if (y < gh - 1) push(k + gw);
-    }
-    let inside = new Uint8Array(n), cnt = 0;
-    {
-      // 가장 큰 덩어리 하나만 남김(종이 가장자리 그림자 같은 자잘한 조각 제거)
-      const lab = new Int32Array(n).fill(-1); let best = -1, bestA = 0, L0 = 0;
-      for (let s0 = 0; s0 < n; s0++) {
-        if (outside[s0] || lab[s0] >= 0) continue;
-        sp = 0; stack[sp++] = s0; lab[s0] = L0; let a = 0;
-        while (sp) {
-          const k = stack[--sp], x = k % gw, y = (k / gw) | 0; a++;
-          if (x > 0 && !outside[k - 1] && lab[k - 1] < 0) { lab[k - 1] = L0; stack[sp++] = k - 1; }
-          if (x < gw - 1 && !outside[k + 1] && lab[k + 1] < 0) { lab[k + 1] = L0; stack[sp++] = k + 1; }
-          if (y > 0 && !outside[k - gw] && lab[k - gw] < 0) { lab[k - gw] = L0; stack[sp++] = k - gw; }
-          if (y < gh - 1 && !outside[k + gw] && lab[k + gw] < 0) { lab[k + gw] = L0; stack[sp++] = k + gw; }
-        }
-        if (a > bestA) { bestA = a; best = L0; }
-        L0++;
+    // 얼굴 테두리 안쪽 찾기: 선의 틈을 조금씩 더 메워 가며 닫힌 테두리를 찾음
+    const stack = new Int32Array(n);
+    let sp = 0, inside = null, cnt = 0, Bd = B;
+    S.fallback = true;
+    for (let it = 1; it <= 7; it++) {
+      Bd = dilate(Bd, gw, gh);
+      if (it < 2) continue;
+      const res = enclosed(Bd, gw, gh, stack);
+      const fr = res.cnt / n;
+      if (fr > 0.04 && fr < 0.95) {
+        // 틈을 메우느라 두꺼워진 테두리를 원래 선 위치로 되돌림
+        inside = res.inside;
+        for (let e = 0; e < it - 1; e++) inside = erode(inside, gw, gh);
+        cnt = 0; for (let k = 0; k < n; k++) cnt += inside[k];
+        S.fallback = false;
+        break;
       }
-      for (let k = 0; k < n; k++) { inside[k] = lab[k] === best ? 1 : 0; cnt += inside[k]; }
     }
-    const frac = cnt / n;
-    S.fallback = frac < 0.03 || frac > 0.97;
     if (S.fallback) {
-      const mx = Math.round(gw * 0.04), my = Math.round(gh * 0.04); cnt = 0;
-      for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-        const v = (x >= mx && x < gw - mx && y >= my && y < gh - my) ? 1 : 0;
-        inside[y * gw + x] = v; cnt += v;
-      }
+      inside = new Uint8Array(n);
+      const mx = Math.round(gw * 0.04), my = Math.round(gh * 0.04);
+      for (let y = my; y < gh - my; y++) for (let x = mx; x < gw - mx; x++) { inside[y * gw + x] = 1; cnt++; }
     }
 
-    // 큰 덩어리: 테두리에서 멀수록 높게
+    // 1) 얼굴 전체 덩어리: 가장자리는 둥글게 깎이고 윗면은 완만한 덩어리
     const dMain = chamfer(inside, gw, gh);
     let maxMain = 0; for (let k = 0; k < n; k++) if (dMain[k] > maxMain) maxMain = dMain[k];
+    const wMain = Math.max(3, maxMain * 0.22);
     const main = new Float32Array(n);
-    for (let k = 0; k < n; k++) main[k] = inside[k] ? circ(dMain[k] / Math.max(1, maxMain)) : 0;
+    for (let k = 0; k < n; k++) main[k] = inside[k] ? 0.72 * circ(Math.min(1, dMain[k] / wMain)) + 0.28 * circ(dMain[k] / Math.max(1, maxMain)) : 0;
 
-    // 작은 덩어리: 선으로 둘러싸인 눈·코·입 같은 부분을 각각 볼록하게
+    // 2) 선으로 둘러싸인 부분(눈·코·입·뿔 등)을 한 층 더 올림
     const B1 = dilate(B, gw, gh), comp = new Uint8Array(n);
     for (let k = 0; k < n; k++) comp[k] = inside[k] && !B1[k] ? 1 : 0;
     const label = new Int32Array(n).fill(-1), areas = [], maxD = [];
     const d2 = chamfer(comp, gw, gh);
     let L = 0;
-    for (let s = 0; s < n; s++) {
-      if (!comp[s] || label[s] >= 0) continue;
-      sp = 0; stack[sp++] = s; label[s] = L; let area = 0, md = 0;
+    for (let s0 = 0; s0 < n; s0++) {
+      if (!comp[s0] || label[s0] >= 0) continue;
+      sp = 0; stack[sp++] = s0; label[s0] = L; let area = 0, md = 0;
       while (sp) {
         const k = stack[--sp], x = k % gw, y = (k / gw) | 0; area++; if (d2[k] > md) md = d2[k];
-        const nb = [x > 0 ? k - 1 : -1, x < gw - 1 ? k + 1 : -1, y > 0 ? k - gw : -1, y < gh - 1 ? k + gw : -1];
-        for (const q of nb) if (q >= 0 && comp[q] && label[q] < 0) { label[q] = L; stack[sp++] = q; }
+        if (x > 0 && comp[k - 1] && label[k - 1] < 0) { label[k - 1] = L; stack[sp++] = k - 1; }
+        if (x < gw - 1 && comp[k + 1] && label[k + 1] < 0) { label[k + 1] = L; stack[sp++] = k + 1; }
+        if (y > 0 && comp[k - gw] && label[k - gw] < 0) { label[k - gw] = L; stack[sp++] = k - gw; }
+        if (y < gh - 1 && comp[k + gw] && label[k + gw] < 0) { label[k + gw] = L; stack[sp++] = k + gw; }
       }
       areas.push(area); maxD.push(md); L++;
     }
-    const sub = new Float32Array(n);
+    let bg = -1, bgA = 0;
+    for (let l = 0; l < L; l++) if (areas[l] > bgA) { bgA = areas[l]; bg = l; }
+    const feat = new Float32Array(n);
     for (let k = 0; k < n; k++) {
-      const l = label[k]; if (l < 0 || areas[l] < 6) continue;
-      const amp = 0.35 + 0.65 * Math.min(1, Math.sqrt(areas[l] / Math.max(1, cnt)) / 0.45);
-      sub[k] = circ(d2[k] / Math.max(1, maxD[l])) * amp;
+      const l = label[k];
+      if (l < 0 || l === bg || areas[l] < 8) continue;
+      const amp = 0.5 + 0.5 * Math.min(1, Math.sqrt(areas[l] / Math.max(1, cnt)) / 0.3);
+      const w = Math.max(2, maxD[l] * 0.5);
+      feat[k] = amp * (0.65 * circ(Math.min(1, d2[k] / w)) + 0.35 * circ(d2[k] / Math.max(1, maxD[l])));
     }
     let H = new Float32Array(n);
-    for (let k = 0; k < n; k++) H[k] = inside[k] ? 0.55 * main[k] + 0.45 * sub[k] : 0;
-    H = boxBlur(boxBlur(H, gw, gh, 1), gw, gh, 1);
-    let hm = 0; for (let k = 0; k < n; k++) { if (!inside[k]) H[k] = 0; if (H[k] > hm) hm = H[k]; }
+    for (let k = 0; k < n; k++) H[k] = inside[k] ? main[k] + 0.42 * feat[k] : 0;
+    H = boxBlur(H, gw, gh, 1);
+    let hm = 0; for (let k = 0; k < n; k++) { if (!inside[k]) H[k] *= 0.3; if (H[k] > hm) hm = H[k]; }
     for (let k = 0; k < n; k++) H[k] /= (hm || 1);
 
     Object.assign(S, { gw, gh, n, inside, main, H0: H, groove: boxBlur(line, gw, gh, 1), P: new Float32Array(n), undo: [] });
@@ -637,9 +694,15 @@
   }
 
   // ================= 입체 만들기 =================
+  // 0~4층처럼 층층이 나누기(층 경계는 살짝 둥글게)
+  function terrace(h) {
+    const x = h * 4, f = Math.min(3, Math.floor(x)), t = Math.min(1, x - f);
+    const e = t < 0.8 ? 0 : (t - 0.8) / 0.2, sm = e * e * (3 - 2 * e);
+    return (f + (h >= 1 ? 1 : sm)) / 4;
+  }
   function heightAt(k) {
-    const lv = 0.08 + 0.92 * S.amount;
-    return Math.max(0.05, PLATE + lv * 3.2 * S.H0[k] - S.groove[k] * (0.05 + 0.15 * lv) + S.P[k]);
+    const lv = 0.08 + 0.92 * S.amount, H = S.terrace ? terrace(S.H0[k]) : S.H0[k];
+    return Math.max(0.05, PLATE + lv * 3.2 * H - S.groove[k] * (0.05 + 0.15 * lv) + S.P[k]);
   }
 
   function makeGrid(masked, isBack) {
@@ -658,13 +721,26 @@
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(gw * gh * 3), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(gw * gh * 3), 3));
     g.setIndex(idx);
     return g;
   }
 
   function buildMeshes() {
-    for (const m of [surf, plate]) if (m) { group.remove(m); m.geometry.dispose(); }
-    surf = new THREE.Mesh(makeGrid(false, false), clayMat);
+    for (const m of [surf, plate, wire]) if (m) { group.remove(m); m.geometry.dispose(); }
+    surf = new THREE.Mesh(makeGrid(false, false), S.view === 'layers' ? layerMat : clayMat);
+    // 그물망(다각형 구조) 보기용 선
+    const st = Math.max(2, Math.round(Math.max(S.gw, S.gh) / 72)), pairs = [];
+    for (let j = 0; j < S.gh; j += st) for (let i = 0; i + st < S.gw; i += st) pairs.push(j * S.gw + i, j * S.gw + i + st);
+    for (let i = 0; i < S.gw; i += st) for (let j = 0; j + st < S.gh; j += st) pairs.push(j * S.gw + i, (j + st) * S.gw + i);
+    for (let j = 0; j + st < S.gh; j += st) for (let i = 0; i + st < S.gw; i += st) pairs.push(j * S.gw + i, (j + st) * S.gw + i + st);
+    wirePairs = pairs;
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pairs.length * 3), 3));
+    wire = new THREE.LineSegments(wg, wireMat);
+    wire.visible = S.view === 'wire';
+    group.add(wire);
     surf.castShadow = surf.receiveShadow = true;
     group.add(surf);
     // 앞면은 빼고 옆면·뒷면만 그린 바탕판
@@ -680,15 +756,55 @@
     aimLight();
   }
 
-  function updateHeights() {
+  // rect가 있으면 그 부분만 다시 계산(붓으로 문지를 때 빠르게)
+  function updateHeights(rect) {
     if (!surf) return;
-    const pos = surf.geometry.attributes.position.array;
-    for (let k = 0; k < S.n; k++) pos[k * 3 + 2] = heightAt(k);
-    const g = surf.geometry;
-    g.attributes.position.needsUpdate = true;
-    g.computeVertexNormals();
-    g.computeBoundingSphere();
-    g.computeBoundingBox();
+    const { gw, gh } = S, g = surf.geometry;
+    const pos = g.attributes.position.array, nrm = g.attributes.normal.array;
+    const full = !rect;
+    const i0 = full ? 0 : Math.max(0, rect.i0 - 1), i1 = full ? gw - 1 : Math.min(gw - 1, rect.i1 + 1);
+    const j0 = full ? 0 : Math.max(0, rect.j0 - 1), j1 = full ? gh - 1 : Math.min(gh - 1, rect.j1 + 1);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const k = j * gw + i; pos[k * 3 + 2] = heightAt(k); }
+    // 격자 모양을 이용해 이웃 높이 차이로 면의 방향(빛 받는 방향)을 계산
+    const dx = S.Wd / (gw - 1), dy = S.Hd / (gh - 1);
+    const ni0 = Math.max(0, i0 - 1), ni1 = Math.min(gw - 1, i1 + 1), nj0 = Math.max(0, j0 - 1), nj1 = Math.min(gh - 1, j1 + 1);
+    for (let j = nj0; j <= nj1; j++) {
+      const ju = Math.max(0, j - 1), jd = Math.min(gh - 1, j + 1);
+      for (let i = ni0; i <= ni1; i++) {
+        const il = Math.max(0, i - 1), ir = Math.min(gw - 1, i + 1);
+        const gx = (pos[(j * gw + ir) * 3 + 2] - pos[(j * gw + il) * 3 + 2]) / ((ir - il) * dx);
+        const gy = (pos[(ju * gw + i) * 3 + 2] - pos[(jd * gw + i) * 3 + 2]) / ((jd - ju) * dy);
+        const inv = 1 / Math.sqrt(gx * gx + gy * gy + 1), k = (j * gw + i) * 3;
+        nrm[k] = -gx * inv; nrm[k + 1] = -gy * inv; nrm[k + 2] = inv;
+      }
+    }
+    const setRange = (attr, a0, a1) => {
+      attr.updateRange.offset = a0 * gw * 3;
+      attr.updateRange.count = (a1 - a0 + 1) * gw * 3;
+      attr.needsUpdate = true;
+    };
+    setRange(g.attributes.position, j0, j1);
+    setRange(g.attributes.normal, nj0, nj1);
+    if (S.view === 'layers') {
+      const col = g.attributes.color.array, span = (0.08 + 0.92 * S.amount) * 3.2;
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const k = j * gw + i, rel = (pos[k * 3 + 2] - PLATE) / span;
+        const c = LAYER_COLORS[rel < 0.04 ? 0 : 1 + Math.min(3, Math.floor(Math.max(0, rel) * 4 * 0.999))];
+        col[k * 3] = c.r; col[k * 3 + 1] = c.g; col[k * 3 + 2] = c.b;
+      }
+      setRange(g.attributes.color, j0, j1);
+    }
+    if (wire && S.view === 'wire') {
+      const wp = wire.geometry.attributes.position.array;
+      for (let q = 0; q < wirePairs.length; q++) {
+        const k = wirePairs[q];
+        wp[q * 3] = pos[k * 3]; wp[q * 3 + 1] = pos[k * 3 + 1]; wp[q * 3 + 2] = pos[k * 3 + 2] + 0.02;
+      }
+      wire.geometry.attributes.position.needsUpdate = true;
+      if (full) wire.geometry.computeBoundingSphere();
+    }
+    if (full) { g.computeBoundingSphere(); g.computeBoundingBox(); }
+    invalidate();
   }
 
   // ================= 예시 그림 =================
@@ -797,6 +913,21 @@
     el.addEventListener('pointercancel', () => { on = false; });
   })();
 
+  $('terraceBtn').addEventListener('click', () => {
+    S.terrace = !S.terrace;
+    $('terraceBtn').classList.toggle('on', S.terrace);
+    updateHeights();
+    if (S.terrace) toast('활동지의 층위 설계처럼 0~4층으로 나눠서 보여 줘요.', 2400);
+  });
+  document.querySelectorAll('[data-view]').forEach((b) => b.addEventListener('click', () => {
+    S.view = b.dataset.view;
+    document.querySelectorAll('[data-view]').forEach((x) => x.classList.toggle('on', x === b));
+    if (surf) surf.material = S.view === 'layers' ? layerMat : clayMat;
+    if (wire) wire.visible = S.view === 'wire';
+    $('legend').classList.toggle('hidden', S.view !== 'layers');
+    updateHeights();
+  }));
+
   // ================= 부분 높이 바꾸기 =================
   document.querySelectorAll('[data-brush]').forEach((b) => b.addEventListener('click', () => {
     document.querySelectorAll('[data-brush]').forEach((x) => x.classList.toggle('on', x === b));
@@ -827,7 +958,8 @@
   (function brush() {
     const cv = renderer.domElement, ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
     const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0), hitPt = new THREE.Vector3();
-    let stroke = null, raf = 0;
+    let stroke = null, raf = 0, dirtyRect = null;
+    const flush = () => { raf = 0; if (dirtyRect) { updateHeights(dirtyRect); dirtyRect = null; } };
     const toNdc = (e) => {
       const r = cv.getBoundingClientRect();
       ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
@@ -839,6 +971,10 @@
       const R = S.brush * Math.max(S.gw, S.gh), lim = Math.ceil(R * 1.6), sign = S.tool === 'raise' ? 1 : -1;
       const i0 = Math.max(0, Math.floor(gi - lim)), i1 = Math.min(S.gw - 1, Math.ceil(gi + lim));
       const j0 = Math.max(0, Math.floor(gj - lim)), j1 = Math.min(S.gh - 1, Math.ceil(gj + lim));
+      if (i0 > i1 || j0 > j1) return;
+      dirtyRect = dirtyRect
+        ? { i0: Math.min(dirtyRect.i0, i0), i1: Math.max(dirtyRect.i1, i1), j0: Math.min(dirtyRect.j0, j0), j1: Math.max(dirtyRect.j1, j1) }
+        : { i0, i1, j0, j1 };
       for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
         const d2 = ((i - gi) ** 2 + (j - gj) ** 2) / (R * R);
         if (d2 > 2.56) continue;
@@ -854,7 +990,7 @@
       const from = stroke.last, dist = from.distanceTo(world), cnt = Math.max(1, Math.ceil(dist / step));
       for (let s2 = 1; s2 <= cnt; s2++) stamp(from.clone().lerp(world, s2 / cnt));
       stroke.last.copy(world);
-      if (!raf) raf = requestAnimationFrame(() => { raf = 0; updateHeights(); });
+      if (!raf) raf = requestAnimationFrame(flush);
     }
     cv.addEventListener('pointerdown', (e) => {
       if (S.tool === 'rotate' || !surf) return;
@@ -870,7 +1006,7 @@
       ring.material.color.set(S.tool === 'raise' ? 0xffffff : 0x1E2925);
       ring.visible = true;
       stamp(h.point);
-      updateHeights();
+      flush();
     });
     cv.addEventListener('pointermove', (e) => {
       if (!stroke || e.pointerId !== stroke.id) return;
@@ -897,6 +1033,7 @@
     sunLight.position.copy(target).addScaledVector(dir, 34);
     sunLight.target.position.copy(target);
     sunLight.target.updateMatrixWorld();
+    invalidate();
     // 패드 표시
     const R = pad.clientWidth / 2 || 110, rr = R - 30;
     sun.style.left = R + x * rr + 'px';
